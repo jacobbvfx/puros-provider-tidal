@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "tidal",
+  "version": "1.0.0",
+  "displayName": "TIDAL",
+  "description": "TIDAL catalog, library and lossless playback integration.",
+  "homepage": "https://tidal.com",
+  "icon": "assets/icon.svg",
+  "brandColor": "#000000",
+  "defaultPriority": 100,
+  "librarySyncMode": "host-mirror",
+  "capabilities": [
+    "auth",
+    "catalog.search",
+    "catalog.entities",
+    "catalog.home",
+    "library.sync",
+    "playback.resolve",
+    "playback.prefetch",
+    "playback.progressive",
+    "metadata.artwork",
+    "metadata.bio",
+    "metadata.credits"
+  ],
+  "settings": [
+    {
+      "id": "connection-status",
+      "label": "Connection",
+      "type": "status",
+      "statusKey": "account"
+    },
+    {
+      "id": "connect",
+      "label": "Connect TIDAL",
+      "description": "Sign in with the TIDAL device authorization flow.",
+      "type": "action",
+      "action": { "capability": "auth", "method": "login" }
+    },
+    {
+      "id": "sync",
+      "label": "Sync library",
+      "type": "action",
+      "action": { "capability": "library.sync", "method": "enumerate", "args": [{}] }
+    },
+    {
+      "id": "disconnect",
+      "label": "Disconnect",
+      "type": "action",
+      "action": { "capability": "auth", "method": "logout" },
+      "destructive": true
+    }
+  ],
+  "permissions": {
+    "runtimeEnvironment": [
+      "TIDAL_CLIENT_ID", "TIDAL_CLIENT_SECRET", "TIDAL_API_BASE_URL", "TIDAL_AUTH_BASE_URL",
+      "TIDAL_AUTHORIZE_URL", "TIDAL_REDIRECT_URI", "TIDAL_PYTHON_BIN", "TIDAL_SCOPES",
+      "TIDAL_DEFAULT_COUNTRY_CODE", "TIDAL_AUDIO_QUALITY", "TIDAL_REQUEST_TIMEOUT_MS", "TIDAL_MAX_RETRIES"
+    ],
+    "networkOrigins": ["https://*.tidal.com"],
+    "externalOrigins": ["https://*.tidal.com"],
+    "secrets": ["session"],
+    "helpers": [
+      {
+        "id": "bridge",
+        "executable": "helper/run.sh",
+        "allowedArguments": [
+          "login", "search", "catalog-search", "artist-bundle", "artist",
+          "artist-genre-map", "album-bundle", "add-to-library", "library-sync",
+          "home-shelves", "home-collection", "playback-info", "stream_manifest",
+          "format-info-batch", "track-contributors", "session-info"
+        ]
+      },
+      {
+        "id": "remux",
+        "executable": "helper/dist/ffmpeg",
+        "argumentTemplate": [
+          "-y", "-hide_banner", "-nostdin", "-i", { "cachePath": "input" },
+          "-map", "0", "-movflags", "use_metadata_tags", "-c:a", "copy",
+          "-map_metadata", "0:g", "-loglevel", "quiet", { "cachePath": "output" }
+        ]
+      },
+      {
+        "id": "progressive-version",
+        "executable": "helper/dist/ffmpeg",
+        "processPriority": "below-normal",
+        "allowedArguments": ["-version"]
+      },
+      {
+        "id": "progressive-remux",
+        "executable": "helper/dist/ffmpeg",
+        "processPriority": "below-normal",
+        "argumentTemplate": [
+          "-hide_banner", "-loglevel", "error", "-nostdin", "-threads", "1",
+          "-y", "-i", { "cachePath": "input" }, "-map", "0:a:0",
+          "-c:a", "copy", "-map_metadata", "0:g", "-f", "flac",
+          { "cachePath": "output" }
+        ]
+      },
+      {
+        "id": "progressive-duration",
+        "executable": "helper/dist/ffmpeg",
+        "argumentTemplate": [
+          "-hide_banner", "-nostdin", "-threads", "1", "-i", { "cachePath": "input" },
+          "-map", "0:a:0", "-f", "null", "-"
+        ]
+      }
+    ]
+  },
+  "build": {
+    "steps": [{ "command": "helper/build.sh", "platforms": ["darwin"] }],
+    "extraResources": [
+      { "from": "assets", "to": "providers/tidal/assets", "filter": ["icon.svg"] },
+      { "from": "helper/run.sh", "to": "providers/tidal/helper/run.sh" },
+      { "from": "helper/dist", "to": "providers/tidal/helper/dist" }
+    ],
+    "binaries": [
+      "providers/tidal/helper/dist/tidalapi_helper",
+      "providers/tidal/helper/dist/ffmpeg"
+    ]
+  }
+}
