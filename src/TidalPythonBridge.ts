@@ -131,17 +131,6 @@ export class TidalPythonBridge {
     })
   }
 
-  async getArtistGenreMap(
-    session: TidalStoredSession,
-    artistIds: string[],
-  ): Promise<BridgeEnvelope<Record<string, string[]>>> {
-    return this.runCommand<Record<string, string[]>>('artist-genre-map', {
-      session,
-      artistIds,
-      preferredQuality: this.config.preferredAudioQuality,
-    })
-  }
-
   async getAlbumBundle(
     session: TidalStoredSession,
     albumId: string,

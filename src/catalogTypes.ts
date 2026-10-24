@@ -1,4 +1,4 @@
-import type { FormatInfoV1 } from 'puros-provider-sdk'
+import type { FormatInfoV1, ProviderTrackUnavailableReasonV1 } from 'puros-provider-sdk'
 
 /**
  * The plugin's internal catalog shapes, produced by the helper bridge and
@@ -82,6 +82,8 @@ export interface CatalogProviderTrack {
   providerUrl?: string | null
   inLibrary?: boolean
   formatInfo?: FormatInfo | null
+  playable?: boolean
+  unavailableReason?: ProviderTrackUnavailableReasonV1 | null
 }
 
 export interface CatalogPlaylistSummary {
@@ -150,6 +152,8 @@ export interface HomeProviderTrack {
   discordArtworkUrl?: string | null
   trackNumber?: number | null
   formatInfo: FormatInfo | null
+  playable?: boolean
+  unavailableReason?: ProviderTrackUnavailableReasonV1 | null
 }
 
 export interface HomeProviderCollectionBundle {

@@ -83,13 +83,6 @@ export class TidalApiService {
     return response.result
   }
 
-  async getArtistGenreMap(artistIds: string[]): Promise<Record<string, string[]>> {
-    const session = await this.requireSession()
-    const response = await this.bridge.getArtistGenreMap(session, artistIds)
-    await this.auth.syncExternalSession(response.session)
-    return response.result ?? {}
-  }
-
   async getAlbumBundle(albumId: string): Promise<TidalAlbumBundle> {
     const session = await this.requireSession()
     const response = await this.bridge.getAlbumBundle(session, albumId)

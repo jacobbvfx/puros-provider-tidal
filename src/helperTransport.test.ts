@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ProviderHelperOutputV1, ProviderHelpersHostV1 } from 'puros-provider-sdk'
+import { ProviderApiError, type ProviderHelperOutputV1, type ProviderHelpersHostV1 } from 'puros-provider-sdk'
 import type { TidalConfig } from './types'
 import { TidalHelperTransport } from './helperTransport'
 import { TidalPythonBridge, type TidalHelperRunner } from './TidalPythonBridge'
@@ -36,6 +36,16 @@ describe('Tidal private helper transport', () => {
     expect(result.result?.authorizationUrl).toBe('https://login.tidal.com/x')
     expect(onEvent).toHaveBeenCalledTimes(2)
     expect(helpers.terminate).not.toHaveBeenCalled()
+  })
+
+  it('turns a helper TRACK_UNAVAILABLE result into a typed provider error', async () => {
+    const helpers = fakeHelpers([
+      { type: 'stdout', data: bytes('{"event":"result","ok":false,"error":"Not streamable","code":"TRACK_UNAVAILABLE","reason":"region"}\n') },
+      { type: 'exit', exitCode: 1, signal: null },
+    ])
+    const error = await new TidalHelperTransport(helpers).run('stream_manifest', {}).catch((reason: unknown) => reason)
+    expect(error).toBeInstanceOf(ProviderApiError)
+    expect((error as ProviderApiError).providerError).toMatchObject({ code: 'TRACK_UNAVAILABLE', details: { reason: 'region' }, retryable: false })
   })
 
   it('terminates its handle when event processing rejects', async () => {

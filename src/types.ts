@@ -1,3 +1,4 @@
+import type { ProviderTrackUnavailableReasonV1 } from 'puros-provider-sdk'
 import type { StreamManifest } from './progressive/session'
 import type {
   CatalogProviderAlbum,
@@ -104,6 +105,8 @@ export interface TidalTrack {
   album?: TidalAlbum | null
   genres?: string[]
   providerUrl?: string | null
+  playable?: boolean
+  unavailableReason?: ProviderTrackUnavailableReasonV1 | null
 }
 
 export interface TidalPlaylist {
@@ -134,6 +137,8 @@ export interface TidalSearchTrack {
   duration: number
   coverUrl: string | null
   quality: FormatInfo
+  playable?: boolean
+  unavailableReason?: ProviderTrackUnavailableReasonV1 | null
 }
 
 export type TidalCatalogSearchResults = CatalogProviderSearchResults

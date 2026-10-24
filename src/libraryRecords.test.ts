@@ -29,6 +29,23 @@ describe('Tidal paged library mapping', () => {
     expect(structuredClone(records)).toEqual(records)
   })
 
+  it('passes on what TIDAL said about streaming each track', () => {
+    const records = mapTidalLibraryRecords({
+      albums: [],
+      tracks: [
+        { ...track, id: 1, playable: false, unavailableReason: 'region' },
+        { ...track, id: 2, playable: false },
+        { ...track, id: 3, playable: true, unavailableReason: null },
+        { ...track, id: 4 },
+      ],
+      playlists: [],
+    })
+    const tracks = records.filter((record) => record.type === 'track').map((record) => record.value)
+    expect(tracks.map((value) => [value.sourceId, 'playable' in value ? value.playable : 'absent', 'unavailableReason' in value ? value.unavailableReason : 'absent'])).toEqual([
+      ['1', false, 'region'], ['2', false, 'other'], ['3', true, null], ['4', 'absent', 'absent'],
+    ])
+  })
+
   it('returns bounded pages with checkpoint only at completion', () => {
     const records = mapTidalLibraryRecords(payload)
     const first = pageTidalLibraryRecords(records, 0, 3, 123)

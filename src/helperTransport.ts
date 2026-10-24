@@ -1,4 +1,4 @@
-import type { ProviderHelpersHostV1 } from 'puros-provider-sdk'
+import { ProviderApiError, providerError, type ProviderHelpersHostV1 } from 'puros-provider-sdk'
 import type { TidalStoredSession } from './types'
 
 interface HelperResult<T> {
@@ -7,6 +7,9 @@ interface HelperResult<T> {
   result?: T
   session?: TidalStoredSession
   error?: string
+  /** `TRACK_UNAVAILABLE` when TIDAL will not stream the track to this account. */
+  code?: string
+  reason?: string
 }
 
 export interface TidalHelperEnvelope<T> {
@@ -73,6 +76,12 @@ export class TidalHelperTransport {
       if (stdout.trim()) await acceptLine(stdout)
       if (!result) throw new Error(stderr.trim() || 'Tidal helper did not return a result')
       const envelope: HelperResult<T> = result
+      if (!envelope.ok && envelope.code === 'TRACK_UNAVAILABLE') {
+        throw new ProviderApiError(providerError('TRACK_UNAVAILABLE', envelope.error || 'This track is not available on TIDAL', {
+          retryable: false,
+          details: { reason: envelope.reason || 'other' },
+        }))
+      }
       if (!envelope.ok) throw new Error(envelope.error || stderr.trim() || 'Tidal helper failed')
       return { ok: true, result: envelope.result, session: envelope.session }
     } catch (error) {

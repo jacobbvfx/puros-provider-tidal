@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "apiVersion": 1,
   "id": "tidal",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "displayName": "TIDAL",
   "description": "TIDAL catalog, library and lossless playback integration.",
   "homepage": "https://tidal.com",
@@ -66,7 +66,7 @@
         "executable": "helper/run.sh",
         "allowedArguments": [
           "login", "search", "catalog-search", "artist-bundle", "artist",
-          "artist-genre-map", "album-bundle", "add-to-library", "library-sync",
+          "album-bundle", "add-to-library", "library-sync",
           "home-shelves", "home-collection", "playback-info", "stream_manifest",
           "format-info-batch", "track-contributors", "session-info"
         ]

@@ -24,7 +24,9 @@ import { mapTidalLibraryRecords, pageTidalLibraryRecords } from './libraryRecord
 import { getTidalConfig } from './config'
 import { createTidalRuntimeServices } from './runtimeServices'
 import { createTidalPlaybackRuntime } from './playbackRuntime'
+import { trackAvailability } from './availability'
 import { getDisplayArtworkUrl } from './artwork'
+import { normalizeTidalBio } from './bio'
 
 export const manifest = manifestJson as ProviderManifestV1
 
@@ -44,7 +46,7 @@ function artist(value: CatalogProviderArtist): ProviderArtistV1 {
     name: value.name,
     normalizedName: value.normalizedName ?? null,
     artworkUrl: value.artworkUrl ?? null,
-    bio: value.bio ?? null,
+    bio: normalizeTidalBio(value.bio),
     bioUrl: value.bioUrl ?? null,
     genres: value.genres ?? [],
     providerUrl: value.providerUrl ?? null,
@@ -94,6 +96,7 @@ function track(value: CatalogProviderTrack): ProviderTrackV1 {
     providerUrl: value.providerUrl ?? null,
     inLibrary: value.inLibrary,
     format: value.formatInfo ?? null,
+    ...trackAvailability(value),
   }
 }
 
@@ -183,6 +186,7 @@ async function createRuntime(host: ProviderHostV1): Promise<ProviderRuntimeV1> {
                 primaryArtistName: hit.artist,
                 artworkUrl: hit.coverUrl,
                 format: hit.quality,
+                ...trackAvailability(hit),
               })),
               playlists: [],
               nextCursor: null,
@@ -200,10 +204,6 @@ async function createRuntime(host: ProviderHostV1): Promise<ProviderRuntimeV1> {
       },
       'catalog.entities': {
         async getArtist(sourceId) { ensureActive(); return artist(await catalog.getArtist(sourceId)) },
-        async getArtistGenres(sourceIds) {
-          ensureActive()
-          return services.api.getArtistGenreMap(sourceIds)
-        },
         async getArtistBundle(sourceId, request) {
           ensureActive()
           const bundle = await catalog.getArtistBundle(sourceId, { limit: request?.limit })
@@ -276,6 +276,7 @@ async function createRuntime(host: ProviderHostV1): Promise<ProviderRuntimeV1> {
               primaryArtistName: value.artist,
               artworkUrl: value.artworkUrl,
               format: value.formatInfo,
+              ...trackAvailability(value),
             })),
           }
         },
@@ -343,7 +344,8 @@ async function createRuntime(host: ProviderHostV1): Promise<ProviderRuntimeV1> {
           ensureActive()
           if (ref.entityType !== 'artist') return null
           const value = await catalog.getArtist(ref.sourceId)
-          return value.bio ? { text: value.bio, sourceUrl: value.bioUrl ?? undefined, genres: value.genres } : null
+          const text = normalizeTidalBio(value.bio)
+          return text ? { text, sourceUrl: value.bioUrl ?? undefined, genres: value.genres } : null
         },
       },
       'metadata.credits': {

@@ -224,6 +224,41 @@ def serialize_album(album: Any) -> dict[str, Any]:
     }
 
 
+class TrackUnavailableError(RuntimeError):
+    """TIDAL lists the track but will not stream it to this account."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__("This track is not available on TIDAL for this account")
+        self.reason = reason
+
+
+def track_availability(track: Any) -> dict[str, Any]:
+    """`playable`/`unavailableReason` as the TIDAL app greys tracks out.
+
+    `allowStreaming` is false where the track is not licensed for the account's
+    country; `streamReady` is false before release or after a takedown.
+    """
+    allow_streaming = getattr(track, "allow_streaming", None)
+    stream_ready = getattr(track, "stream_ready", None)
+    if allow_streaming is None and stream_ready is None:
+        return {}
+    if allow_streaming and stream_ready:
+        return {"playable": True, "unavailableReason": None}
+    if not allow_streaming:
+        reason = "region"
+    else:
+        start = getattr(track, "stream_start_date", None)
+        now = dt.datetime.now(start.tzinfo) if isinstance(start, dt.datetime) else None
+        reason = "unreleased" if now and start > now else "removed"
+    return {"playable": False, "unavailableReason": reason}
+
+
+def ensure_track_streamable(track: Any) -> None:
+    availability = track_availability(track)
+    if availability.get("playable") is False:
+        raise TrackUnavailableError(str(availability.get("unavailableReason") or "other"))
+
+
 def serialize_track(track: Any) -> dict[str, Any]:
     album = getattr(track, "album", None)
     artwork_url = safe_album_image_url(album) if album else None
@@ -243,6 +278,7 @@ def serialize_track(track: Any) -> dict[str, Any]:
       "artworkUrl": artwork_url,
       "providerUrl": getattr(track, "share_url", None),
       "genres": serialize_genres(track),
+      **track_availability(track),
     }
 
 
@@ -733,6 +769,7 @@ def serialize_home_track(track: Any) -> dict[str, Any]:
       "artworkUrl": safe_album_image_url(album) if album else None,
       "trackNumber": getattr(track, "track_num", None),
       "formatInfo": None,
+      **track_availability(track),
     }
 
 
@@ -790,6 +827,7 @@ def serialize_search_track(track: Any) -> dict[str, Any]:
       "coverUrl": cover_url,
       "quality": serialize_format_info(quality_hint),
       "providerUrl": getattr(track, "share_url", None),
+      **track_availability(track),
     }
 
 
@@ -2036,6 +2074,8 @@ def resolve_best_playable_track(
     allow_recovery: bool = True,
 ) -> tuple[Any, Any, Any, str, list[str]]:
     reference_track = session.track(track_id, with_album=True)
+    if not allow_recovery:
+        ensure_track_streamable(reference_track)
     last_error: Exception | None = None
     successful_candidates: list[tuple[tuple[int, int, int, int, int, int, int, int, int, int], Any, Any, Any, str, str]] = []
     recovery_trace: list[str] = []
@@ -2158,98 +2198,6 @@ def merge_tracks(*collections: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(merged.values())
 
 
-def fetch_genre_items_best_effort(genre_obj: Any, model: Any, label: str) -> list[Any]:
-    try:
-        return retry_tidal_call(label, lambda: genre_obj.items(model), attempts=2)
-    except Exception as error:
-        if is_transient_tidal_error(error):
-            emit({
-                "event": "transient_skip",
-                "label": label,
-                "error": str(error).strip() or error.__class__.__name__,
-            })
-        return []
-
-
-def collect_payload_artists(payload: dict[str, Any], artists_by_id: dict[str, list[dict[str, Any]]]) -> None:
-    candidates: list[Any] = []
-    candidates.extend(payload.get("artists") or [])
-    if payload.get("artist"):
-        candidates.append(payload.get("artist"))
-    album = payload.get("album")
-    if isinstance(album, dict):
-        candidates.extend(album.get("artists") or [])
-        if album.get("artist"):
-            candidates.append(album.get("artist"))
-
-    for artist in candidates:
-        if not isinstance(artist, dict):
-            continue
-        artist_id = str(artist.get("sourceId") or artist.get("id") or "").strip()
-        if not artist_id:
-            continue
-        artists_by_id.setdefault(artist_id, []).append(artist)
-
-
-def enrich_library_genres(session: tidalapi.Session, albums: list[dict[str, Any]], tracks: list[dict[str, Any]]) -> None:
-    albums_by_id = {
-        str(album.get("sourceId") or album.get("id") or "").strip(): album
-        for album in albums
-        if str(album.get("sourceId") or album.get("id") or "").strip()
-    }
-    tracks_by_id = {
-        str(track.get("sourceId") or track.get("id") or "").strip(): track
-        for track in tracks
-        if str(track.get("sourceId") or track.get("id") or "").strip()
-    }
-    artists_by_id: dict[str, list[dict[str, Any]]] = {}
-    for album in albums:
-        collect_payload_artists(album, artists_by_id)
-    for track in tracks:
-        collect_payload_artists(track, artists_by_id)
-
-    if not albums_by_id and not tracks_by_id and not artists_by_id:
-        return
-
-    try:
-        genres = retry_tidal_call("genres", session.genre.get_genres, attempts=2)
-    except Exception as error:
-        if is_transient_tidal_error(error):
-            emit({
-                "event": "transient_skip",
-                "label": "genres",
-                "error": str(error).strip() or error.__class__.__name__,
-            })
-        return
-
-    for genre_obj in genres:
-        genre_name = str(getattr(genre_obj, "name", "") or "").strip()
-        if not genre_name:
-            continue
-
-        if albums_by_id and bool(getattr(genre_obj, "albums", False)):
-            for item in fetch_genre_items_best_effort(genre_obj, tidalapi.album.Album, f"genre.albums:{genre_name}"):
-                album_id = str(getattr(item, "id", "") or "").strip()
-                add_payload_genre(albums_by_id.get(album_id), genre_name)
-
-        if tracks_by_id and bool(getattr(genre_obj, "tracks", False)):
-            for item in fetch_genre_items_best_effort(genre_obj, tidalapi.media.Track, f"genre.tracks:{genre_name}"):
-                track_id = str(getattr(item, "id", "") or "").strip()
-                track_payload = tracks_by_id.get(track_id)
-                add_payload_genre(track_payload, genre_name)
-                album = track_payload.get("album") if isinstance(track_payload, dict) else None
-                if isinstance(album, dict):
-                    album_id = str(album.get("sourceId") or album.get("id") or "").strip()
-                    add_payload_genre(albums_by_id.get(album_id), genre_name)
-                    add_payload_genre(album, genre_name)
-
-        if artists_by_id and bool(getattr(genre_obj, "artists", False)):
-            for item in fetch_genre_items_best_effort(genre_obj, tidalapi.artist.Artist, f"genre.artists:{genre_name}"):
-                artist_id = str(getattr(item, "id", "") or "").strip()
-                for artist_payload in artists_by_id.get(artist_id, []):
-                    add_payload_genre(artist_payload, genre_name)
-
-
 def cmd_login(payload: dict[str, Any]) -> dict[str, Any]:
     session = make_session(payload)
     link, future = session.login_oauth()
@@ -2366,41 +2314,6 @@ def cmd_artist(payload: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         artist.bio = None
     return serialize_catalog_artist(artist), session_snapshot(session)
-
-
-def cmd_artist_genre_map(payload: dict[str, Any]) -> dict[str, list[str]]:
-    session = load_session(payload)
-    artist_ids = {
-        str(artist_id).strip()
-        for artist_id in payload.get("artistIds") or []
-        if str(artist_id).strip()
-    }
-    if not artist_ids:
-        return {}, session_snapshot(session)
-
-    genre_map: dict[str, list[str]] = {artist_id: [] for artist_id in artist_ids}
-    try:
-        genres = retry_tidal_call("genres", session.genre.get_genres, attempts=2)
-    except Exception as error:
-        if is_transient_tidal_error(error):
-            emit({
-                "event": "transient_skip",
-                "label": "genres",
-                "error": str(error).strip() or error.__class__.__name__,
-            })
-        return genre_map, session_snapshot(session)
-
-    for genre_obj in genres:
-        genre_name = str(getattr(genre_obj, "name", "") or "").strip()
-        if not genre_name or not bool(getattr(genre_obj, "artists", False)):
-            continue
-        for item in fetch_genre_items_best_effort(genre_obj, tidalapi.artist.Artist, f"genre.artists:{genre_name}"):
-            artist_id = str(getattr(item, "id", "") or "").strip()
-            if artist_id not in artist_ids:
-                continue
-            add_payload_genre({"genres": genre_map[artist_id]}, genre_name)
-
-    return genre_map, session_snapshot(session)
 
 
 def cmd_album_bundle(payload: dict[str, Any]) -> dict[str, Any]:
@@ -2673,6 +2586,7 @@ def cmd_stream_manifest(payload: dict[str, Any]) -> dict[str, Any]:
         )
     else:
         resolved_track = session.track(track_id, with_album=True)
+        ensure_track_streamable(resolved_track)
         media_stream, stream_manifest, resolved_quality, _actual_track_id = select_first_playable_stream(
             resolved_track,
             preferred_quality,
@@ -2746,7 +2660,6 @@ COMMANDS: dict[str, Callable[[dict[str, Any]], tuple[Any, dict[str, Any]]]] = {
   "search": cmd_search,
   "catalog-search": cmd_catalog_search,
   "artist": cmd_artist,
-  "artist-genre-map": cmd_artist_genre_map,
   "artist-bundle": cmd_artist_bundle,
   "album-bundle": cmd_album_bundle,
   "track-contributors": cmd_track_contributors,
@@ -2791,6 +2704,7 @@ def main() -> int:
           "event": "result",
           "ok": False,
           "error": message,
+          **({"code": "TRACK_UNAVAILABLE", "reason": error.reason} if isinstance(error, TrackUnavailableError) else {}),
         })
         return 1
 

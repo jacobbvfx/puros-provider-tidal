@@ -1,4 +1,4 @@
-import type { ProviderHostV1 } from 'puros-provider-sdk'
+import { ProviderApiError, type ProviderHostV1 } from 'puros-provider-sdk'
 import type { TidalPlaybackInfo } from './types'
 import type { TidalPlaybackService } from './TidalPlaybackService'
 
@@ -91,6 +91,8 @@ export class TidalPlaybackCoordinator {
     try {
       return await this.resolve(trackIds.slice(0, 1), { allowRecovery: false, emitWarning: false })
     } catch (error) {
+      // Core greys out and skips a track TIDAL will not stream; other failures just skip the prefetch.
+      if (error instanceof ProviderApiError && error.providerError.code === 'TRACK_UNAVAILABLE') throw error
       console.warn('[Puros][TIDAL] Prefetch skipped:', error instanceof Error ? error.message : String(error))
       return null
     }
@@ -160,6 +162,8 @@ export class TidalPlaybackCoordinator {
   }
 
   private async emitOperationalWarning(error: unknown): Promise<void> {
+    // Core tells the user itself when a track cannot be streamed.
+    if (error instanceof ProviderApiError && error.providerError.code === 'TRACK_UNAVAILABLE') return
     if (isRateLimitError(error)) { this.noteRateLimit(error, false); return }
     if (isAuthError(error)) {
       await this.host.events.emit({

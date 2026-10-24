@@ -8,6 +8,7 @@ import type {
   ProviderTrackV1,
 } from 'puros-provider-sdk'
 import { imageIdToUrl } from './TidalApiService'
+import { trackAvailability } from './availability'
 import type { TidalAlbum, TidalArtist, TidalLibraryPayload, TidalTrack } from './types'
 
 function sourceId(value: string | number | null | undefined): string {
@@ -73,6 +74,7 @@ function mapTrack(value: TidalTrack): ProviderTrackV1 {
     artworkUrl: imageIdToUrl(value.album?.cover),
     providerUrl: value.providerUrl ?? null,
     inLibrary: true,
+    ...trackAvailability(value),
   }
 }
 
